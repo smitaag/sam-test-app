@@ -1,0 +1,116 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  sam-app
+
+  Sample SAM Template for sam-app
+  
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    Timeout: 3
+
+Resources:
+  # See links for more info
+  # Referencing cognito authorizer: https://github.com/awslabs/serverless-application-model/issues/512#issuecomment-411284092
+  # Logical id is auto generated: https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
+  # Sample template.yml: https://github.com/awslabs/serverless-application-model/blob/release/v1.8.0/examples/2016-10-31/api_cognito_auth/template.yaml
+  MyCustomApi:
+    Type: "AWS::Serverless::Api"
+    Properties:
+      StageName: Prod
+      Auth: # We will eventually define other auth options here such as Usage Plans/Api Keys, AWS_IAM, and Resource Policies
+        DefaultAuthorizer: MyCustomCognitoAuthorizer
+        Authorizers:
+          MyCustomCognitoAuthorizer:
+            UserPoolArn: !GetAtt MyCustomCognitoUserPool.Arn # Can be a string, or array
+            # Identity: # Optional
+              # Header: ... # Optional; Default: Authorization
+              # ValidationExpression: ...  # Optional; ensures the request header matches a pattern before checking in with the Authorizer endpoint; is there a default we can set for Cognito User Pools Auth?
+  
+  # Creating a cognito user pool - https://github.com/awslabs/serverless-application-model/blob/master/examples/2016-10-31/api_cognito_auth/template.yaml
+  MyCustomCognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Ref CognitoUserPoolName
+      # LambdaConfig:
+        # PreSignUp: !GetAtt PreSignupLambdaFunction.Arn
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+      UsernameAttributes:
+        - email
+      Schema:
+        - AttributeDataType: String
+          Name: email
+          Required: false
+
+  MyCustomCognitoUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref MyCustomCognitoUserPool
+      ClientName: !Ref CognitoUserPoolClientName
+      GenerateSecret: false
+
+  GetBreedFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: api/
+      Handler: person.authPerson
+      Policies: arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
+      Runtime: nodejs14.x
+      Events:
+        GetEvent:
+          Type: Api
+          Properties:
+            Path: /breed/{breedId}
+            Method: get
+            RestApiId: !Ref MyCustomApi
+            Auth:
+              Authorizer: NONE
+
+  CreatePerson:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      CodeUri: api/
+      Handler: person.createPerson
+      Runtime: nodejs14.x
+      Architectures:
+        - x86_64
+      Events:
+        HelloWorld:
+          Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+          Properties:
+            Path: /persons
+            Method: post
+
+  GetPerson:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      CodeUri: api/
+      Handler: person.getPerson
+      Runtime: nodejs14.x
+      Architectures:
+        - x86_64
+      Events:
+        HelloWorld:
+          Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+          Properties:
+            Path: /persons
+            Method: get
+
+  
+
+Outputs:
+  # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
+  # Find out more about other implicit resources you can reference within SAM
+  # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
+  GetPersonApi:
+    Description: "API Gateway endpoint URL for Prod stage for Hello World function"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/persons/"
+  GetPerson:
+    Description: "Hello World Lambda Function ARN"
+    Value: !GetAtt GetPerson.Arn
+  GetPersonIamRole:
+    Description: "Implicit IAM Role created for Hello World function"
+    Value: !GetAtt GetPersonRole.Arn
